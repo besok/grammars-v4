@@ -30,7 +30,7 @@ options {
 }
 
 sql_script
-    : ((sql_plus_command | unit_statement) SEMICOLON?)* EOF
+    : sql_plus_command_no_semicolon? ((sql_plus_command | unit_statement) (SEMICOLON '/'? (sql_plus_command | unit_statement))* SEMICOLON? '/'?) EOF
     ;
 
 unit_statement
@@ -72,13 +72,16 @@ unit_statement
     | alter_user
     | alter_view
 
+    | call_statement
     | create_analytic_view
     | create_attribute_dimension
     | create_audit_policy
     | create_cluster
     | create_context
     | create_controlfile
+    | create_database
     | create_database_link
+    | create_dimension
     | create_directory
     | create_diskgroup
     | create_edition
@@ -93,6 +96,7 @@ unit_statement
     | create_materialized_view
     | create_materialized_view_log
     | create_materialized_zonemap
+    | create_operator
     | create_outline
     | create_package
     | create_package_body
@@ -134,6 +138,7 @@ unit_statement
     | drop_lockdown_profile
     | drop_materialized_view
     | drop_materialized_zonemap
+    | drop_operator
     | drop_outline
     | drop_package
     | drop_pmem_filestore
@@ -164,7 +169,6 @@ unit_statement
     | flashback_table
     | grant_statement
     | noaudit_statement
-    | procedure_call
     | purge_statement
     | rename_object
     | revoke_statement
@@ -441,7 +445,7 @@ enable_disable_volume
 // Function DDLs
 
 drop_function
-    : DROP FUNCTION function_name ';'
+    : DROP FUNCTION function_name
     ;
 
 // https://docs.oracle.com/en/database/oracle/oracle-database/21/sqlrf/ALTER-FLASHBACK-ARCHIVE.html
@@ -462,7 +466,7 @@ alter_hierarchy
     ;
 
 alter_function
-    : ALTER FUNCTION function_name COMPILE DEBUG? compiler_parameters_clause* (REUSE SETTINGS)? ';'
+    : ALTER FUNCTION function_name COMPILE DEBUG? compiler_parameters_clause* (REUSE SETTINGS)?
     ;
 
 // https://docs.oracle.com/en/database/oracle/oracle-database/21/sqlrf/ALTER-JAVA.html
@@ -478,9 +482,16 @@ match_string
     ;
 
 create_function_body
-    : CREATE (OR REPLACE)? FUNCTION function_name ('(' parameter (',' parameter)* ')')?
+    : CREATE (OR REPLACE)? (EDITIONABLE | NONEDITIONABLE)? FUNCTION function_name ('(' parameter (',' parameter)* ')')?
       RETURN type_spec (invoker_rights_clause | parallel_enable_clause | result_cache_clause | DETERMINISTIC)*
-      ((PIPELINED? (IS | AS) (DECLARE? seq_of_declare_specs? body | call_spec)) | (PIPELINED | AGGREGATE) USING implementation_type_name) ';'
+      ((PIPELINED? (IS | AS) (DECLARE? seq_of_declare_specs? body | call_spec))
+        | (PIPELINED | AGGREGATE) USING implementation_type_name
+        | sql_macro_body
+      ) ';'
+    ;
+
+sql_macro_body
+    : SQL_MACRO IS BEGIN RETURN quoted_string SEMICOLON END
     ;
 
 // Creation Function - Specific Clauses
@@ -580,19 +591,19 @@ drop_lockdown_profile
 // Package DDLs
 
 drop_package
-    : DROP PACKAGE BODY? (schema_object_name '.')? package_name ';'
+    : DROP PACKAGE BODY? (schema_object_name '.')? package_name
     ;
 
 alter_package
-    : ALTER PACKAGE package_name COMPILE DEBUG? (PACKAGE | BODY | SPECIFICATION)? compiler_parameters_clause* (REUSE SETTINGS)? ';'
+    : ALTER PACKAGE package_name COMPILE DEBUG? (PACKAGE | BODY | SPECIFICATION)? compiler_parameters_clause* (REUSE SETTINGS)?
     ;
 
 create_package
-    : CREATE (OR REPLACE)? PACKAGE (schema_object_name '.')? package_name invoker_rights_clause? (IS | AS) package_obj_spec* END package_name? ';'
+    : CREATE (OR REPLACE)? (EDITIONABLE | NONEDITIONABLE)? PACKAGE (schema_object_name '.')? package_name invoker_rights_clause? (IS | AS) package_obj_spec* END package_name?
     ;
 
 create_package_body
-    : CREATE (OR REPLACE)? PACKAGE BODY (schema_object_name '.')? package_name (IS | AS) package_obj_body* (BEGIN seq_of_statements)? END package_name? ';'
+    : CREATE (OR REPLACE)? (EDITIONABLE | NONEDITIONABLE)? PACKAGE BODY (schema_object_name '.')? package_name (IS | AS) package_obj_body* (BEGIN seq_of_statements)? END package_name?
     ;
 
 // Create Package Specific Clauses
@@ -648,11 +659,11 @@ drop_pmem_filestore
 // Procedure DDLs
 
 drop_procedure
-    : DROP PROCEDURE procedure_name ';'
+    : DROP PROCEDURE procedure_name
     ;
 
 alter_procedure
-    : ALTER PROCEDURE procedure_name COMPILE DEBUG? compiler_parameters_clause* (REUSE SETTINGS)? ';'
+    : ALTER PROCEDURE procedure_name COMPILE DEBUG? compiler_parameters_clause* (REUSE SETTINGS)?
     ;
 
 function_body
@@ -699,7 +710,7 @@ drop_rollback_segment
     ;
 
 drop_role
-    : DROP ROLE role_name ';'
+    : DROP ROLE role_name
     ;
 
 // https://docs.oracle.com/en/database/oracle/oracle-database/21/sqlrf/create-pmem-filestore.html
@@ -726,18 +737,18 @@ create_rollback_segment
 // Trigger DDLs
 
 drop_trigger
-    : DROP TRIGGER trigger_name ';'
+    : DROP TRIGGER trigger_name
     ;
 
 alter_trigger
     : ALTER TRIGGER alter_trigger_name=trigger_name
-      ((ENABLE | DISABLE) | RENAME TO rename_trigger_name=trigger_name | COMPILE DEBUG? compiler_parameters_clause* (REUSE SETTINGS)?) ';'
+      ((ENABLE | DISABLE) | RENAME TO rename_trigger_name=trigger_name | COMPILE DEBUG? compiler_parameters_clause* (REUSE SETTINGS)?)
     ;
 
 create_trigger
     : CREATE ( OR REPLACE )? TRIGGER trigger_name
       (simple_dml_trigger | compound_dml_trigger | non_dml_trigger)
-      trigger_follows_clause? (ENABLE | DISABLE)? trigger_when_clause? trigger_body ';'
+      trigger_follows_clause? (ENABLE | DISABLE)? trigger_when_clause? trigger_body
     ;
 
 trigger_follows_clause
@@ -781,10 +792,10 @@ compound_trigger_block
     ;
 
 timing_point_section
-    : bk=BEFORE STATEMENT IS trigger_block BEFORE STATEMENT ';'
-    | bk=BEFORE EACH ROW IS trigger_block BEFORE EACH ROW ';'
-    | ak=AFTER STATEMENT IS trigger_block AFTER STATEMENT ';'
-    | ak=AFTER EACH ROW IS trigger_block AFTER EACH ROW ';'
+    : bk=BEFORE STATEMENT IS trigger_block BEFORE STATEMENT
+    | bk=BEFORE EACH ROW IS trigger_block BEFORE EACH ROW
+    | ak=AFTER STATEMENT IS trigger_block AFTER STATEMENT
+    | ak=AFTER EACH ROW IS trigger_block AFTER EACH ROW
     ;
 
 non_dml_event
@@ -837,7 +848,7 @@ referencing_element
 // DDLs
 
 drop_type
-    : DROP TYPE BODY? type_name (FORCE | VALIDATE)? ';'
+    : DROP TYPE BODY? type_name (FORCE | VALIDATE)?
     ;
 
 alter_type
@@ -849,7 +860,7 @@ alter_type
     | alter_collection_clauses
     | modifier_clause
     | overriding_subprogram_spec
-    ) dependent_handling_clause? ';'
+    ) dependent_handling_clause?
     ;
 
 // Alter Type Specific Clauses
@@ -892,7 +903,7 @@ dependent_exceptions_part
     ;
 
 create_type
-    : CREATE (OR REPLACE)? TYPE (type_definition | type_body) ';'
+    : CREATE (OR REPLACE)? TYPE (type_definition | type_body)
     ;
 
 // Create Type Specific Clauses
@@ -1031,11 +1042,11 @@ type_elements_parameter
 // Sequence DDLs
 
 drop_sequence
-    : DROP SEQUENCE sequence_name ';'
+    : DROP SEQUENCE sequence_name
     ;
 
 alter_sequence
-    : ALTER SEQUENCE sequence_name sequence_spec+ ';'
+    : ALTER SEQUENCE sequence_name sequence_spec+
     ;
 
 // https://docs.oracle.com/en/database/oracle/oracle-database/21/sqlrf/ALTER-SESSION.html
@@ -1059,7 +1070,7 @@ alter_session_set_clause
     ;
 
 create_sequence
-    : CREATE SEQUENCE sequence_name (sequence_start_clause | sequence_spec)* ';'
+    : CREATE SEQUENCE sequence_name (sequence_start_clause | sequence_spec)*
     ;
 
 // Common Sequence
@@ -1292,7 +1303,11 @@ privilege_audit_clause
     ;
 
 action_audit_clause
-    : (standard_actions | component_actions)+
+    : (standard_actions | component_actions | system_actions)+
+    ;
+
+system_actions
+    : ACTIONS system_privilege (',' system_privilege)*
     ;
 
 standard_actions
@@ -1452,7 +1467,6 @@ create_index
     : CREATE (UNIQUE | BITMAP)? INDEX index_name
        ON (cluster_index_clause | table_index_clause | bitmap_join_index_clause)
        (USABLE | UNUSABLE)?
-       ';'
     ;
 
 cluster_index_clause
@@ -1577,7 +1591,7 @@ indextype
 
 //https://docs.oracle.com/cd/E11882_01/server.112/e41084/statements_1010.htm#SQLRF00805
 alter_index
-    : ALTER INDEX index_name (alter_index_ops_set1 | alter_index_ops_set2) ';'
+    : ALTER INDEX index_name (alter_index_ops_set1 | alter_index_ops_set2)
     ;
 
 alter_index_ops_set1
@@ -1736,7 +1750,7 @@ create_user
           | user_lock_clause
           | user_editions_clause
           | container_clause
-        )+ ';'
+        )+
     ;
 
 // The standard clauses only permit one user per statement.
@@ -1756,8 +1770,8 @@ alter_user
         | container_clause
         | container_data_clause
         )+
-      ';'
-      | user_object_name (',' user_object_name)* proxy_clause ';'
+
+      | user_object_name (',' user_object_name)* proxy_clause
     ;
 
 drop_user
@@ -1848,7 +1862,6 @@ administer_key_management
                                 | secret_management_clauses
                                 | zero_downtime_software_patching_clauses
                                 )
-        ';'
     ;
 
 keystore_management_clauses
@@ -2081,7 +2094,7 @@ analyze
       | LIST CHAINED ROWS into_clause1?
       | DELETE SYSTEM? STATISTICS
       )
-      ';'
+
     ;
 
 partition_extention_clause
@@ -2138,7 +2151,7 @@ associate_statistics
     : ASSOCIATE STATISTICS
         WITH (column_association | function_association)
         storage_table_clause?
-      ';'
+
     ;
 
 column_association
@@ -2202,13 +2215,13 @@ storage_table_clause
 
 // https://docs.oracle.com/database/121/SQLRF/statements_4008.htm#SQLRF56110
 unified_auditing
-    : {self.isVersion12()}?
+    : {this.isVersion12()}?
       AUDIT (POLICY policy_name ((BY | EXCEPT) audit_user (',' audit_user)* )?
                                 (WHENEVER NOT? SUCCESSFUL)?
             | CONTEXT NAMESPACE oracle_namespace
                       ATTRIBUTES attribute_name (',' attribute_name)* (BY audit_user (',' audit_user)*)?
             )
-      ';'
+
     ;
 
 policy_name
@@ -2226,15 +2239,15 @@ audit_traditional
             )
         (BY (SESSION | ACCESS) )? (WHENEVER NOT? SUCCESSFUL)?
         audit_container_clause?
-      ';'
+
     ;
 
 audit_direct_path
-    : {self.isVersion12()}? DIRECT_PATH auditing_by_clause
+    : {this.isVersion12()}? DIRECT_PATH auditing_by_clause
     ;
 
 audit_container_clause
-    : {self.isVersion12()}? (CONTAINER EQUALS_OP (CURRENT | ALL))
+    : {this.isVersion12()}? (CONTAINER EQUALS_OP (CURRENT | ALL))
     ;
 
 audit_operation_clause
@@ -2276,7 +2289,7 @@ auditing_on_clause
     : ON ( object_name
          | DIRECTORY regular_id
          | MINING MODEL model_name
-         | {self.isVersion12()}? SQL TRANSLATION PROFILE profile_name
+         | {this.isVersion12()}? SQL TRANSLATION PROFILE profile_name
          | DEFAULT
          )
     ;
@@ -2304,7 +2317,7 @@ sql_statement_shortcut
     | MATERIALIZED VIEW
     | NOT EXISTS
     | OUTLINE
-    | {self.isVersion12()}? PLUGGABLE DATABASE
+    | {this.isVersion12()}? PLUGGABLE DATABASE
     | PROCEDURE
     | PROFILE
     | PUBLIC DATABASE LINK
@@ -2340,7 +2353,7 @@ sql_statement_shortcut
     ;
 
 drop_index
-    : DROP INDEX index_name ';'
+    : DROP INDEX index_name
     ;
 
 // https://docs.oracle.com/en/database/oracle/oracle-database/21/sqlrf/DISASSOCIATE-STATISTICS.html
@@ -2399,7 +2412,7 @@ noaudit_statement
     ;
 
 rename_object
-    : RENAME object_name TO object_name ';'
+    : RENAME object_name TO object_name
     ;
 
 grant_statement
@@ -2415,7 +2428,7 @@ grant_statement
       (WITH (ADMIN | DELEGATE) OPTION)?
       (WITH HIERARCHY OPTION)?
       (WITH GRANT OPTION)?
-      container_clause? ';'
+      container_clause?
     ;
 
 container_clause
@@ -2459,12 +2472,16 @@ program_unit
     : (FUNCTION | PROCEDURE | PACKAGE) (schema_name '.')? id_expression
     ;
 
+create_dimension
+    : CREATE DIMENSION identifier  level_clause+ (hierarchy_clause | attribute_clause | extended_attribute_clause)+
+    ;
+
 // https://docs.oracle.com/en/database/oracle/oracle-database/21/sqlrf/CREATE-DIRECTORY.html
 create_directory
     : CREATE (OR REPLACE)? DIRECTORY directory_name
         (SHARING '=' (METADATA | NONE))?
         AS directory_path
-      ';'
+
     ;
 
 directory_name
@@ -2493,7 +2510,7 @@ alter_library
        ( COMPILE library_debug? compiler_parameters_clause* (REUSE SETTINGS)?
        | library_editionable
        )
-     ';'
+
     ;
 
 // https://docs.oracle.com/en/database/oracle/oracle-database/21/sqlrf/DROP-JAVA.html
@@ -2533,11 +2550,11 @@ credential_name
     ;
 
 library_editionable
-    : {self.isVersion12()}? (EDITIONABLE | NONEDITIONABLE)
+    : {this.isVersion12()}? (EDITIONABLE | NONEDITIONABLE)
     ;
 
 library_debug
-    : {self.isVersion12()}? DEBUG
+    : {this.isVersion12()}? DEBUG
     ;
 
 
@@ -2602,11 +2619,11 @@ alter_view
        | READ (ONLY | WRITE)
        | alter_view_editionable?
        )
-      ';'
+
     ;
 
 alter_view_editionable
-    : {self.isVersion12()}? (EDITIONABLE | NONEDITIONABLE)
+    : {this.isVersion12()}? (EDITIONABLE | NONEDITIONABLE)
     ;
 
 // https://docs.oracle.com/en/database/oracle/oracle-database/21/sqlrf/CREATE-VIEW.html
@@ -2724,7 +2741,7 @@ alter_tablespace
        | flashback_mode_clause
        | tablespace_retention_clause
        )
-     ';'
+
     ;
 
 datafile_tempfile_clauses
@@ -2770,7 +2787,6 @@ create_tablespace
         | temporary_tablespace_clause
         | undo_tablespace_clause
         )
-      ';'
     ;
 
 permanent_tablespace_clause
@@ -2938,7 +2954,6 @@ alter_materialized_view
        | COMPILE
        | CONSIDER FRESH
        )?
-     ';'
     ;
 
 alter_mv_option1
@@ -2980,7 +2995,7 @@ alter_materialized_view_log
        | cache_or_nocache
        )?
        mv_log_augmentation? mv_log_purge_clause?
-      ';'
+
     ;
 add_mv_log_column_clause
     : ADD '(' column_name ')'
@@ -3106,9 +3121,22 @@ alter_operator
     : ALTER OPERATOR operator_name (add_binding_clause | drop_binding_clause | COMPILE)
     ;
 
+drop_operator
+    : DROP OPERATOR operator_name FORCE?
+    ;
+
+create_operator
+    : CREATE (OR REPLACE)? OPERATOR operator_name BINDING binding_clause (COMMA binding_clause)*
+        (SHARING '=' (METADATA | NONE))?
+    ;
+
+binding_clause
+    : LEFT_PAREN datatype (COMMA datatype)* RIGHT_PAREN
+          RETURN LEFT_PAREN? datatype RIGHT_PAREN? implementation_clause? using_function_clause
+    ;
+
 add_binding_clause
-    : ADD BINDING LEFT_PAREN datatype (COMMA datatype)* RIGHT_PAREN
-        RETURN LEFT_PAREN? datatype RIGHT_PAREN? implementation_clause? using_function_clause
+    : ADD BINDING binding_clause
     ;
 
 implementation_clause
@@ -3151,7 +3179,7 @@ create_materialized_view
         (FOR UPDATE)?
         ( (DISABLE | ENABLE) QUERY REWRITE )?
         AS select_only_statement
-        ';'
+
     ;
 
 scoped_table_ref_constraint
@@ -3180,7 +3208,6 @@ create_mv_refresh
 
 drop_materialized_view
     : DROP MATERIALIZED VIEW tableview_name (PRESERVE TABLE)?
-        ';'
     ;
 
 create_context
@@ -3188,7 +3215,7 @@ create_context
            (INITIALIZED (EXTERNALLY | GLOBALLY)
            | ACCESSED GLOBALLY
            )?
-      ';'
+
     ;
 
 oracle_namespace
@@ -3206,7 +3233,7 @@ create_cluster
           )*
           parallel_clause? (ROWDEPENDENCIES | NOROWDEPENDENCIES)?
           (CACHE | NOCACHE)?
-          ';'
+
     ;
 
 // https://docs.oracle.com/en/database/oracle/oracle-database/21/sqlrf/CREATE-PROFILE.html
@@ -3284,11 +3311,10 @@ create_table
             )?
         TABLE (schema_name '.')? table_name
         (SHARING '=' (METADATA | EXTENDED? DATA | NONE))?
-        (relational_table | object_table | xmltype_table)
+        (relational_table | xmltype_table | object_table)
         (MEMOPTIMIZE FOR READ)?
         (MEMOPTIMIZE FOR WRITE)?
         (PARENT tableview_name)?
-      ';'
     ;
 
 xmltype_table
@@ -3415,6 +3441,7 @@ table_properties
         row_movement_clause?
         logical_replication_clause?
         flashback_archive_clause?
+        physical_properties?
         (ROW ARCHIVAL)?
         (AS select_only_statement | FOR EXCHANGE WITH TABLE (schema_name '.')? table_name)?
     ;
@@ -3651,7 +3678,7 @@ table_partition_description
     : deferred_segment_creation? segment_attributes_clause?
         (table_compression | key_compression)?
         (OVERFLOW segment_attributes_clause? )?
-        (lob_storage_clause | varray_col_properties | nested_table_col_properties)?
+        (lob_storage_clause | varray_col_properties | nested_table_col_properties)*
     ;
 
 partitioning_storage_clause
@@ -3769,7 +3796,7 @@ deferred_segment_creation
 
 segment_attributes_clause
     : ( physical_attributes_clause
-      | TABLESPACE tablespace_name=id_expression
+      | TABLESPACE (tablespace_name=id_expression | SET? identifier)
       | table_compression
       | logging_clause
       )+
@@ -3929,11 +3956,11 @@ upgrade_table_clause
     ;
 
 truncate_table
-    : TRUNCATE TABLE tableview_name PURGE? SEMICOLON
+    : TRUNCATE TABLE tableview_name PURGE?
     ;
 
 drop_table
-    : DROP TABLE tableview_name PURGE? SEMICOLON
+    : DROP TABLE tableview_name PURGE?
     ;
 
 // https://docs.oracle.com/en/database/oracle/oracle-database/21/sqlrf/DROP-TABLESPACE.html
@@ -3953,7 +3980,7 @@ including_contents_clause
     ;
 
 drop_view
-    : DROP VIEW tableview_name (CASCADE CONSTRAINT)? SEMICOLON
+    : DROP VIEW tableview_name (CASCADE CONSTRAINT)?
     ;
 
 comment_on_column
@@ -3978,7 +4005,7 @@ alter_synonym
 create_synonym
     // Synonym's schema cannot be specified for public synonyms
     : CREATE (OR REPLACE)? PUBLIC SYNONYM synonym_name FOR (schema_name PERIOD)? schema_object_name (AT_SIGN link_name)?
-    | CREATE (OR REPLACE)? SYNONYM (schema_name PERIOD)? synonym_name FOR (schema_name PERIOD)? schema_object_name (AT_SIGN link_name)?
+    | CREATE (OR REPLACE)? SYNONYM (schema_name PERIOD)? synonym_name FOR (schema_name PERIOD)? schema_object_name (AT_SIGN (schema_name PERIOD)? link_name)?
     ;
 
 drop_synonym
@@ -4059,7 +4086,7 @@ alter_cluster
         | cache_or_nocache
         )+
         parallel_clause?
-        ';'
+
     ;
 
 drop_analytic_view
@@ -4136,7 +4163,6 @@ alter_database
        | property_clauses
        | replay_upgrade_clauses
        )
-      ';'
     ;
 
 database_clause
@@ -4196,7 +4222,7 @@ partial_database_recovery
     ;
 
 partial_database_recovery_10g
-    : {self.isVersion10()}? STANDBY
+    : {this.isVersion10()}? STANDBY
       ( TABLESPACE tablespace (',' tablespace)*
       | DATAFILE CHAR_STRING | filenumber (',' CHAR_STRING | filenumber)*
       )
@@ -4473,9 +4499,78 @@ link_authentication
     : AUTHENTICATED BY user_object_name IDENTIFIED BY password_value
     ;
 
+// added by zrh
+create_database
+    : CREATE DATABASE database_name
+    ( USER (SYS | SYSTEM) IDENTIFIED BY password_value
+     | CONTROLFILE REUSE
+     | (MAXDATAFILES | MAXINSTANCES) UNSIGNED_INTEGER
+     | NATIONAL? CHARACTER SET char_set_name
+     | SET DEFAULT (BIGFILE | SMALLFILE) TABLESPACE
+     | database_logging_clauses
+     | tablespace_clauses
+     | set_time_zone_clause
+     | (BIGFILE | SMALLFILE)? USER_DATA TABLESPACE tablespace_group_name DATAFILE datafile_tempfile_spec (',' datafile_tempfile_spec)*
+     | enable_pluggable_database
+    )+
+    ;
+
+database_logging_clauses
+    : LOGFILE database_logging_sub_clause (',' database_logging_sub_clause)*
+    | (MAXLOGFILES | MAXLOGMEMBERS | MAXLOGHISTORY) UNSIGNED_INTEGER
+    | ARCHIVELOG
+    | NOARCHIVELOG
+    | FORCE LOGGING
+    ;
+
+database_logging_sub_clause
+    : (GROUP UNSIGNED_INTEGER)? file_specification
+    ;
+
+tablespace_clauses
+    : EXTENT MANAGEMENT LOCAL
+    | SYSAUX? DATAFILE file_specification (',' file_specification)*
+    | default_tablespace
+    | default_temp_tablespace
+    | undo_tablespace
+    ;
+
+enable_pluggable_database
+    : ENABLE PLUGGABLE DATABASE (SEED file_name_convert? (SYSTEM tablespace_datafile_clauses)? (SYSAUX tablespace_datafile_clauses)? )? undo_mode_clause?
+    ;
+
+file_name_convert
+    : FILE_NAME_CONVERT EQUALS_OP ( '(' filename_convert_sub_clause (',' filename_convert_sub_clause)* ')' | NONE)
+    ;
+
+filename_convert_sub_clause
+    : CHAR_STRING (',' CHAR_STRING)?
+    ;
+
+tablespace_datafile_clauses
+    : DATAFILES (SIZE size_clause | autoextend_clause)+
+    ;
+
+undo_mode_clause
+    : LOCAL UNDO (ON | OFF)
+    ;
+
+default_tablespace
+    : DEFAULT TABLESPACE tablespace (DATAFILE datafile_tempfile_spec)? extent_management_clause?
+    ;
+
+default_temp_tablespace
+    : (BIGFILE | SMALLFILE)? DEFAULT (TEMPORARY TABLESPACE | LOCAL TEMPORARY TABLESPACE FOR (ALL | LEAF)) tablespace
+        (TEMPFILE file_specification (',' file_specification)*)? extent_management_clause?
+    ;
+
+undo_tablespace
+    : (BIGFILE | SMALLFILE)? UNDO TABLESPACE tablespace (DATAFILE file_specification (',' file_specification)*)?
+    ;
+
 // https://docs.oracle.com/en/database/oracle/oracle-database/21/sqlrf/DROP-DATABASE.html
 drop_database
-    : DROP DATABASE
+    : DROP DATABASE (INCLUDING BACKUPS)? NOPROMPT?
     ;
 
 // https://docs.oracle.com/en/database/oracle/oracle-database/21/sqlrf/CREATE-DATABASE-LINK.html
@@ -4539,7 +4634,7 @@ role_identified_clause
     | IDENTIFIED ( BY identifier
                  | USING identifier ('.' id_expression)?
                  | EXTERNALLY
-                 | GLOBALLY
+                 | GLOBALLY (AS CHAR_STRING)?
                  )
     ;
 
@@ -4554,7 +4649,6 @@ alter_table
       | move_table_clause
       )
       ((enable_disable_clause | enable_or_disable (TABLE LOCK | ALL TRIGGERS) )+)?
-      ';'
     ;
 
 memoptimize_read_write_clause
@@ -4630,7 +4724,7 @@ alter_interval_partition
 
 
 partition_extended_names
-    : (PARTITION | PARTITIONS) ( partition_name
+    : (PARTITION | PARTITIONS) ( partition_name (',' partition_name)*
                                | '(' partition_name (',' partition_name)* ')'
                                | FOR '('? partition_key_value (',' partition_key_value)* ')'? )
     ;
@@ -4811,13 +4905,19 @@ drop_column_clause
 
 modify_column_clauses
     : MODIFY ('(' modify_col_properties (',' modify_col_properties)* ')'
+             |'(' modify_col_visibility (',' modify_col_visibility)* ')'
              | modify_col_properties
+             | modify_col_visibility
              | modify_col_substitutable
              )
     ;
 
 modify_col_properties
     : column_name datatype? (DEFAULT expression)? (ENCRYPT encryption_spec | DECRYPT)? inline_constraint* lob_storage_clause? //TODO alter_xmlschema_clause
+    ;
+
+modify_col_visibility
+    : column_name (VISIBLE | INVISIBLE)
     ;
 
 modify_col_substitutable
@@ -4857,6 +4957,7 @@ lob_segname
 lob_item
     : regular_id
     | quoted_string
+    | DELIMITED_ID
     ;
 
 lob_storage_parameters
@@ -4933,14 +5034,20 @@ varray_item
     ;
 
 column_properties
-    : object_type_col_properties
+    : (object_type_col_properties
     | nested_table_col_properties
-    | (varray_col_properties | lob_storage_clause) //TODO '(' ( ','? lob_partition_storage)+ ')'
-    | xmltype_column_properties
+    | (varray_col_properties | lob_storage_clause) ('(' lob_partition_storage (',' lob_partition_storage)* ')')? //TODO '(' ( ','? lob_partition_storage)+ ')'
+    | xmltype_column_properties)+
+    ;
+
+lob_partition_storage
+    : LOB ('(' lob_item (',' lob_item) ')' STORE AS ((SECUREFILE | BASICFILE) | '(' lob_storage_parameters ')')+
+          | '(' lob_item ')' STORE AS ((SECUREFILE | BASICFILE) | lob_segname | '(' lob_storage_parameters ')')+
+          )
     ;
 
 period_definition
-    : {self.isVersion12()}? PERIOD FOR column_name
+    : {this.isVersion12()}? PERIOD FOR column_name
         ( '(' start_time_column ',' end_time_column ')' )?
     ;
 
@@ -4967,7 +5074,17 @@ column_collation_name
     ;
 
 identity_clause
-    : GENERATED (ALWAYS | BY DEFAULT (ON NULL_)?)? AS IDENTITY ('(' identity_options* ')')?
+    : GENERATED (ALWAYS | BY DEFAULT (ON NULL_)?)? AS IDENTITY identity_options_parentheses?
+    ;
+
+//https://docs.oracle.com/en/database/oracle/oracle-database/21/sqlrf/CREATE-TABLE.html#GUID-F9CE0CC3-13AE-4744-A43C-EAC7A71AAAB6
+// NOTE to identity options
+// according to the SQL Reference, identity_options be nested in parentheses.
+// But statements without parentheses can also be executed successfully on a oracle database.
+// See this issue for more details: https://github.com/antlr/grammars-v4/issues/3183
+identity_options_parentheses
+    : identity_options+
+    | '(' identity_options+ ')'
     ;
 
 identity_options
@@ -5120,7 +5237,7 @@ primary_key_clause
 // Anonymous PL/SQL code block
 
 anonymous_block
-    : (DECLARE seq_of_declare_specs)? BEGIN seq_of_statements (EXCEPTION exception_handler+)? END SEMICOLON
+    : (DECLARE seq_of_declare_specs)? BEGIN seq_of_statements (EXCEPTION exception_handler+)? END
     ;
 
 // Common DDL Clauses
@@ -5266,9 +5383,8 @@ statement
     | return_statement
     | case_statement
     | sql_statement
-    | function_call
+    | call_statement
     | pipe_row_statement
-    | procedure_call
     ;
 
 swallow_to_semi
@@ -5348,12 +5464,8 @@ return_statement
     : RETURN expression?
     ;
 
-function_call
-    : CALL? routine_name function_argument?
-    ;
-
-procedure_call
-    : routine_name function_argument?
+call_statement
+    : CALL? routine_name function_argument? ('.' routine_name function_argument?)* (INTO bind_variable)?
     ;
 
 pipe_row_statement
@@ -5456,7 +5568,7 @@ set_constraint_command
 // https://docs.oracle.com/cd/E18283_01/server.112/e17118/statements_4010.htm#SQLRF01110
 // https://docs.oracle.com/en/database/oracle/oracle-database/21/sqlrf/COMMIT.html
 commit_statement
-    : COMMIT WORK?
+    : COMMIT WORK? write_clause?
       ( COMMENT CHAR_STRING write_clause?
       | FORCE ( CHAR_STRING (',' numeric)?
               | CORRUPT_XID CHAR_STRING
@@ -5916,6 +6028,7 @@ dml_table_expression_clause
     : table_collection_expression
     | '(' select_statement subquery_restriction_clause? ')'
     | tableview_name sample_clause?
+    | json_table_clause (AS identifier)?
     ;
 
 table_collection_expression
@@ -5972,7 +6085,7 @@ unary_logical_expression
 logical_operation:
     ( NULL_
     | NAN | PRESENT
-    | INFINITE | A_LETTER SET | EMPTY
+    | INFINITE | A_LETTER SET | EMPTY_
     | OF TYPE? '(' ONLY? type_spec (',' type_spec)* ')'
     )
     ;
@@ -6023,6 +6136,7 @@ concatenation
 interval_expression
     : DAY ('(' concatenation ')')? TO SECOND ('(' concatenation ')')?
     | YEAR ('(' concatenation ')')? TO MONTH
+    | concatenation (SECOND | DAY | MONTH | YEAR)
     ;
 
 model_expression
@@ -6092,10 +6206,9 @@ case_else_part
     ;
 
 atom
-    : table_element outer_join_sign
-    | bind_variable
+    : bind_variable
     | constant
-    | general_element
+    | general_element outer_join_sign?
     | '(' subquery ')' subquery_operation_part*
     | '(' expressions ')'
     ;
@@ -6112,13 +6225,111 @@ string_function
     | CHR '(' concatenation USING NCHAR_CS ')'
     | NVL '(' expression ',' expression ')'
     | TRIM '(' ((LEADING | TRAILING | BOTH)? quoted_string? FROM)? concatenation ')'
-    | TO_DATE '(' (table_element | standard_function | expression) (',' quoted_string)? ')'
+    | TO_DATE '(' (table_element | standard_function | expression)
+       (DEFAULT concatenation ON CONVERSION ERROR)? (',' quoted_string  (',' quoted_string)? )? ')'
     ;
 
 standard_function
     : string_function
     | numeric_function_wrapper
+    | json_function
     | other_function
+    ;
+
+//see as https://docs.oracle.com/en/database/oracle/oracle-database/21/sqlrf/JSON_ARRAY.html#GUID-46CDB3AF-5795-455B-85A8-764528CEC43B
+json_function
+    : JSON_ARRAY '('  json_array_element ( ',' json_array_element)* json_on_null_clause? json_return_clause? STRICT? ')'
+    | JSON_ARRAYAGG '(' expression (FORMAT JSON)? order_by_clause? json_on_null_clause? json_return_clause? STRICT? ')'
+    | JSON_OBJECT '(' json_object_content ')'
+    | JSON_OBJECTAGG '(' KEY? expression VALUE expression ((NULL_ | ABSENT) ON NULL_)? (RETURNING ( VARCHAR2 ('(' UNSIGNED_INTEGER ( BYTE | CHAR )? ')')? | CLOB | BLOB ))?  STRICT? (WITH UNIQUE KEYS)?')'
+    | JSON_QUERY '(' expression (FORMAT JSON)? ',' CHAR_STRING json_query_returning_clause json_query_wrapper_clause? json_query_on_error_clause? json_query_on_empty_clause? ')'
+    | JSON_SERIALIZE '(' CHAR_STRING (RETURNING json_query_return_type)? PRETTY? ASCII? TRUNCATE? ((NULL_ | ERROR | EMPTY_ (ARRAY | OBJECT)) ON ERROR)? ')'
+    | JSON_TRANSFORM '(' expression ',' json_transform_op (',' json_transform_op)* ')'
+    | JSON_VALUE '('  expression (FORMAT JSON)? (',' CHAR_STRING? json_value_return_clause? ((ERROR | NULL_ | DEFAULT literal)? ON ERROR)? ((ERROR | NULL_ | DEFAULT literal)? ON EMPTY_)? json_value_on_mismatch_clause?')')?
+    ;
+
+json_object_content
+    : (json_object_entry (',' json_object_entry)* | '*') json_on_null_clause? json_return_clause? STRICT? (WITH UNIQUE KEYS)?
+    ;
+
+json_object_entry
+    : KEY? expression (VALUE | IS)? expression
+    | expression ':' expression (FORMAT JSON)?
+    | identifier
+    ;
+
+json_table_clause
+    : JSON_TABLE '(' expression (FORMAT JSON)? (',' CHAR_STRING)? ((ERROR | NULL_) ON ERROR)? ((EMPTY_ | NULL_) ON EMPTY_)? json_column_clause? ')'
+    ;
+
+json_array_element
+    : (expression | CHAR_STRING | NULL_ |  UNSIGNED_INTEGER | json_function) (FORMAT JSON)?
+    ;
+
+json_on_null_clause
+    : (NULL_ | ABSENT) ON NULL_
+    ;
+
+json_return_clause
+    : RETURNING ( VARCHAR2 ('(' UNSIGNED_INTEGER ( BYTE | CHAR )? ')')? | CLOB | BLOB )
+    ;
+
+json_transform_op
+    : REMOVE CHAR_STRING ((IGNORE | ERROR)? ON MISSING)?
+    | INSERT CHAR_STRING '=' CHAR_STRING ((REPLACE | IGNORE | ERROR) ON EXISTING)? ((NULL_ | IGNORE | ERROR | REMOVE)? ON NULL_)?
+    | REPLACE CHAR_STRING '=' CHAR_STRING ((CREATE | IGNORE | ERROR) ON MISSING)? ((NULL_ | IGNORE | ERROR)? ON NULL_)?
+    | expression (FORMAT JSON)?
+    | APPEND CHAR_STRING '=' CHAR_STRING ((CREATE | IGNORE | ERROR) ON MISSING)? ((NULL_ | IGNORE | ERROR)? ON NULL_)?
+    | SET CHAR_STRING '=' expression (FORMAT JSON)? ((REPLACE | IGNORE | ERROR) ON EXISTING)? ((CREATE | IGNORE | ERROR) ON MISSING)? ((NULL_ | IGNORE | ERROR)? ON NULL_)?
+    ;
+
+json_column_clause
+    : COLUMNS '(' json_column_definition (',' json_column_definition)* ')'
+    ;
+
+json_column_definition
+    : expression json_value_return_type? (EXISTS? PATH CHAR_STRING | TRUNCATE (PATH CHAR_STRING)?)? json_query_on_error_clause? json_query_on_empty_clause?
+    | expression json_query_return_type? TRUNCATE? FORMAT JSON  json_query_wrapper_clause? PATH CHAR_STRING
+    | NESTED PATH? expression ('[' ASTERISK ']')? json_column_clause
+    | expression FOR ORDINALITY
+    ;
+
+json_query_returning_clause
+    : (RETURNING json_query_return_type)? PRETTY? ASCII?
+    ;
+
+json_query_return_type
+    : VARCHAR2 ('(' UNSIGNED_INTEGER ( BYTE | CHAR )? ')')? | CLOB | BLOB
+    ;
+
+json_query_wrapper_clause
+    : (WITHOUT ARRAY? WRAPPER) | (WITH (UNCONDITIONAL | CONDITIONAL)? ARRAY? WRAPPER)
+    ;
+
+json_query_on_error_clause
+    : (ERROR | NULL_ | EMPTY_ | EMPTY_ ARRAY | EMPTY_ OBJECT)? ON ERROR
+    ;
+
+json_query_on_empty_clause
+    : (ERROR | NULL_ | EMPTY_ | EMPTY_ ARRAY | EMPTY_ OBJECT)? ON EMPTY_
+    ;
+
+json_value_return_clause
+    : RETURNING json_value_return_type? ASCII?
+    ;
+
+json_value_return_type
+    : VARCHAR2 ('(' UNSIGNED_INTEGER  ( BYTE | CHAR )? ')')? TRUNCATE?
+    | CLOB
+    | DATE
+    | NUMBER '(' INTEGER (',' INTEGER)? ')'
+    | TIMESTAMP (WITH TIMEZONE)?
+    | SDO_GEOMETRY
+    | expression (USING CASESENSITIVE MAPPING)?
+    ;
+
+json_value_on_mismatch_clause
+    : (IGNORE | ERROR | NULL_) ON MISMATCH ('(' MISSING DATA | EXTRA DATA | TYPE ERROR ')')?
     ;
 
 literal
@@ -6150,7 +6361,8 @@ other_function
     : over_clause_keyword function_argument_analytic over_clause?
     | /*TODO stantard_function_enabling_using*/ regular_id function_argument_modeling using_clause?
     | COUNT '(' ( ASTERISK | (DISTINCT | UNIQUE | ALL)? concatenation) ')' over_clause?
-    | (CAST | XMLCAST) '(' (MULTISET '(' subquery ')' | concatenation) AS type_spec ')'
+    | (CAST | XMLCAST) '(' (MULTISET '(' subquery ')' | concatenation) AS type_spec
+      (DEFAULT concatenation ON CONVERSION ERROR)? (',' quoted_string (',' quoted_string)? )? ')'
     | COALESCE '(' table_element (',' (numeric | quoted_string))? ')'
     | COLLECT '(' (DISTINCT | UNIQUE)? concatenation collect_order_by_part? ')'
     | within_or_over_clause_keyword function_argument within_or_over_part+
@@ -6162,9 +6374,13 @@ other_function
     | (FIRST_VALUE | LAST_VALUE) function_argument_analytic respect_or_ignore_nulls? over_clause
     | standard_prediction_function_keyword
       '(' expressions cost_matrix_clause? using_clause? ')'
+    | (TO_BINARY_DOUBLE | TO_BINARY_FLOAT | TO_NUMBER | TO_TIMESTAMP | TO_TIMESTAMP_TZ)
+      '(' concatenation (DEFAULT concatenation ON CONVERSION ERROR)? (',' quoted_string (',' quoted_string)? )? ')'
+    | (TO_DSINTERVAL | TO_YMINTERVAL) '(' concatenation (DEFAULT concatenation ON CONVERSION ERROR)? ')'
     | TRANSLATE '(' expression (USING (CHAR_CS | NCHAR_CS))? (',' expression)* ')'
     | TREAT '(' expression AS REF? type_spec ')'
     | TRIM '(' ((LEADING | TRAILING | BOTH)? quoted_string? FROM)? concatenation ')'
+    | VALIDATE_CONVERSION '(' concatenation AS type_spec (',' quoted_string (',' quoted_string)? )? ')'
     | XMLAGG '(' expression order_by_clause? ')' ('.' general_element_part)*
     | (XMLCOLATTVAL | XMLFOREST)
       '(' xml_multiuse_expression_element (',' xml_multiuse_expression_element)* ')' ('.' general_element_part)*
@@ -6177,13 +6393,14 @@ other_function
     | XMLPI
       '(' (NAME identifier | EVALNAME concatenation) (',' concatenation)? ')' ('.' general_element_part)*
     | XMLQUERY
-      '(' concatenation xml_passing_clause? RETURNING CONTENT (NULL_ ON EMPTY)? ')' ('.' general_element_part)*
+      '(' concatenation xml_passing_clause? RETURNING CONTENT (NULL_ ON EMPTY_)? ')' ('.' general_element_part)*
     | XMLROOT
       '(' concatenation (',' xmlroot_param_version_part)? (',' xmlroot_param_standalone_part)? ')' ('.' general_element_part)*
     | XMLSERIALIZE
       '(' (DOCUMENT | CONTENT) concatenation (AS type_spec)?
       xmlserialize_param_enconding_part? xmlserialize_param_version_part? xmlserialize_param_ident_part? ((HIDE | SHOW) DEFAULTS)? ')'
       ('.' general_element_part)?
+    | TIME CHAR_STRING
     | xmltable
     ;
 
@@ -6321,15 +6538,20 @@ xmlserialize_param_ident_part
 
 // SqlPlus
 
+sql_plus_command_no_semicolon
+    : set_command
+    ;
 sql_plus_command
-    : '/'
-    | EXIT
+    : EXIT
     | PROMPT_MESSAGE
     | SHOW (ERR | ERRORS)
-    | START_CMD
     | whenever_command
-    | set_command
     | timing_command
+    | start_command
+    ;
+
+start_command
+    : START_CMD id_expression PERIOD (SQL | FILE_EXT)
     ;
 
 whenever_command
@@ -6515,7 +6737,7 @@ column_name
 
 tableview_name
     : identifier ('.' id_expression)?
-          (AT_SIGN link_name (PERIOD link_name)? | /*TODO{!(input.LA(2) == BY)}?*/ partition_extension_clause)?
+          (AT_SIGN link_name (PERIOD link_name)* | /*TODO{!(input.LA(2) == BY)}?*/ partition_extension_clause)?
     | xmltable outer_join_sign?
     ;
 
@@ -6662,6 +6884,7 @@ native_datatype_element
     | CLOB
     | NCLOB
     | MLSLABEL
+    | XMLTYPE
     ;
 
 bind_variable
@@ -6676,7 +6899,7 @@ general_element
     ;
 
 general_element_part
-    : (INTRODUCER char_set_name)? id_expression ('.' id_expression)* ('@' link_name)? function_argument?
+    : (INTRODUCER char_set_name)? id_expression ('@' link_name)? function_argument?
     ;
 
 table_element
@@ -6837,8 +7060,7 @@ numeric_negative
     ;
 
 quoted_string
-    : variable_name
-    | CHAR_STRING
+    : CHAR_STRING
     //| CHAR_STRING_PERL
     | NATIONAL_CHAR_STRING_LIT
     ;
@@ -6860,6 +7082,7 @@ regular_id
     : non_reserved_keywords_pre12c
     | non_reserved_keywords_in_12c
     | REGULAR_ID
+    | ABSENT
     | A_LETTER
     | AGENT
     | AGGREGATE
@@ -6874,6 +7097,7 @@ regular_id
     | CLUSTER
     | CONSTRUCTOR
     | CUSTOMDATUM
+    | CASESENSITIVE
     | DECIMAL
     | DELETE
     | DETERMINISTIC
@@ -6892,12 +7116,15 @@ regular_id
     | INDICES
     | INOUT
     | INTEGER
+    | JSON_TRANSFORM
     | K_LETTER
     | LANGUAGE
     | LONG
     | LOOP
     | MOUNTPOINT
     | M_LETTER
+    | MISSING
+    | MISMATCH
     | NUMBER
     | ORADATA
     | OSERROR
@@ -6919,6 +7146,7 @@ regular_id
     | RENAME
     | RESTRICT_REFERENCES
     | RESULT
+    | SDO_GEOMETRY
     | SELF
     | SERIALLY_REUSABLE
     | SET
@@ -6974,6 +7202,7 @@ non_reserved_keywords_in_12c
     | AUTO_REOPTIMIZE
     | AVRO
     | BACKGROUND
+    | BACKUPS
     | BATCHSIZE
     | BATCH_TABLE_ACCESS_BY_ROWID
     | BEGINNING
@@ -7008,6 +7237,7 @@ non_reserved_keywords_in_12c
     | CONTAINERS_DEFAULT
     | CONTAINER_DATA
     | CONTAINER_MAP
+    | CONVERSION
     | CON_DBID_TO_ID
     | CON_GUID_TO_ID
     | CON_ID
@@ -7166,6 +7396,7 @@ non_reserved_keywords_in_12c
     | NO_PQ_CONCURRENT_UNION
     | NO_PQ_REPLICATE
     | NO_PQ_SKEW
+    | NOPROMPT
     | NO_PX_FAULT_TOLERANCE
     | NO_ROOT_SW_FOR_LOCAL
     | NO_SQL_TRANSLATION
@@ -7313,6 +7544,7 @@ non_reserved_keywords_in_12c
     | UTF8
     | V1
     | V2
+    | VALIDATE_CONVERSION
     | VALID_TIME_END
     | VECTOR_TRANSFORM
     | VECTOR_TRANSFORM_DIMS
@@ -7650,7 +7882,7 @@ non_reserved_keywords_pre12c
     | ELIMINATE_OUTER_JOIN
     | EMPTY_BLOB
     | EMPTY_CLOB
-    | EMPTY
+    | EMPTY_
     | ENABLE
     | ENABLE_PRESET
     | ENCODING
@@ -7882,6 +8114,7 @@ non_reserved_keywords_pre12c
     | LDAP_REG_SYNC_INTERVAL
     | LEADING
     | LEAD
+    | LEAF
     | LEAST
     | LEFT
     | LENGTH2
@@ -8549,6 +8782,7 @@ non_reserved_keywords_pre12c
     | SQLLDR
     | SQL
     | SQL_TRACE
+    | SQL_MACRO
     | SQRT
     | STALE
     | STANDALONE

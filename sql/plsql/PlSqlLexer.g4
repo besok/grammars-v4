@@ -31,6 +31,7 @@ options {
 
 ABORT:                        'ABORT';
 ABS:                          'ABS';
+ABSENT:                       'ABSENT';
 ACCESS:                       'ACCESS';
 ACCESSED:                     'ACCESSED';
 ACCOUNT:                      'ACCOUNT';
@@ -127,6 +128,7 @@ AVRO:                         'AVRO';
 BACKGROUND:                   'BACKGROUND';
 BACKINGFILE:                  'BACKINGFILE';
 BACKUP:                       'BACKUP';
+BACKUPS:                      'BACKUPS';
 BACKUPSET:                    'BACKUPSET';
 BASIC:                        'BASIC';
 BASICFILE:                    'BASICFILE';
@@ -199,6 +201,7 @@ CARDINALITY:                  'CARDINALITY';
 CASCADE:                      'CASCADE';
 CASE:                         'CASE';
 CAST:                         'CAST';
+CASESENSITIVE:                'CASE-SENSITIVE';
 CATEGORY:                     'CATEGORY';
 CDBDEFAULT:                   'CDB$DEFAULT';
 CEIL:                         'CEIL';
@@ -310,6 +313,7 @@ CONTINUE:                     'CONTINUE';
 CONTROLFILE:                  'CONTROLFILE';
 CON_UID_TO_ID:                'CON_UID_TO_ID';
 CONVERT:                      'CONVERT';
+CONVERSION:                   'CONVERSION';
 COOKIE:                       'COOKIE';
 COPY:                         'COPY';
 CORR_K:                       'CORR_K';
@@ -481,7 +485,7 @@ ELSIF:                        'ELSIF';
 EM:                           'EM';
 EMPTY_BLOB:                   'EMPTY_BLOB';
 EMPTY_CLOB:                   'EMPTY_CLOB';
-EMPTY:                        'EMPTY';
+EMPTY_:                        'EMPTY';
 ENABLE_ALL:                   'ENABLE_ALL';
 ENABLE:                       'ENABLE';
 ENABLE_PARALLEL_DML:          'ENABLE_PARALLEL_DML';
@@ -777,6 +781,7 @@ JSON_SERIALIZE:               'JSON_SERIALIZE';
 JSON_TABLE:                   'JSON_TABLE';
 JSON_TEXTCONTAINS2:           'JSON_TEXTCONTAINS2';
 JSON_TEXTCONTAINS:            'JSON_TEXTCONTAINS';
+JSON_TRANSFORM:               'JSON_TRANSFORM';
 JSON_VALUE:                   'JSON_VALUE';
 K_LETTER:                     'K';
 KEEP_DUPLICATES:              'KEEP_DUPLICATES';
@@ -799,6 +804,7 @@ LAYER:                        'LAYER';
 LDAP_REGISTRATION_ENABLED:    'LDAP_REGISTRATION_ENABLED';
 LDAP_REGISTRATION:            'LDAP_REGISTRATION';
 LDAP_REG_SYNC_INTERVAL:       'LDAP_REG_SYNC_INTERVAL';
+LEAF:                         'LEAF';
 LEAD_CDB:                     'LEAD_CDB';
 LEAD_CDB_URI:                 'LEAD_CDB_URI';
 LEADING:                      'LEADING';
@@ -921,6 +927,8 @@ MINVALUE:                     'MINVALUE';
 MIRRORCOLD:                   'MIRRORCOLD';
 MIRRORHOT:                    'MIRRORHOT';
 MIRROR:                       'MIRROR';
+MISSING:                      'MISSING';
+MISMATCH:                     'MISMATCH';
 MLSLABEL:                     'MLSLABEL';
 MODEL_COMPILE_SUBQUERY:       'MODEL_COMPILE_SUBQUERY';
 MODEL_DONTVERIFY_UNIQUENESS:  'MODEL_DONTVERIFY_UNIQUENESS';
@@ -1103,6 +1111,7 @@ NO_PLACE_DISTINCT:            'NO_PLACE_DISTINCT';
 NO_PLACE_GROUP_BY:            'NO_PLACE_GROUP_BY';
 NO_PQ_CONCURRENT_UNION:       'NO_PQ_CONCURRENT_UNION';
 NO_PQ_MAP:                    'NO_PQ_MAP';
+NOPROMPT:                     'NOPROMPT';
 NO_PQ_REPLICATE:              'NO_PQ_REPLICATE';
 NO_PQ_SKEW:                   'NO_PQ_SKEW';
 NO_PRUNE_GSETS:               'NO_PRUNE_GSETS';
@@ -1561,6 +1570,7 @@ SCRUB:                        'SCRUB';
 SD_ALL:                       'SD_ALL';
 SD_INHIBIT:                   'SD_INHIBIT';
 SDO_GEOM_MBR:                 'SDO_GEOM_MBR';
+SDO_GEOMETRY:                 'SDO_GEOMETRY';
 SD_SHOW:                      'SD_SHOW';
 SEARCH:                       'SEARCH';
 SECOND:                       'SECOND';
@@ -1645,6 +1655,8 @@ SQLDATA:                      'SQLDATA';
 SQLERROR:                     'SQLERROR';
 SQLLDR:                       'SQLLDR';
 SQL:                          'SQL';
+FILE_EXT:                     'PKB' | 'PKS';
+SQL_MACRO:                    'SQL_MACRO';
 SQL_TRACE:                    'SQL_TRACE';
 SQL_TRANSLATION_PROFILE:      'SQL_TRANSLATION_PROFILE';
 SQRT:                         'SQRT';
@@ -2163,6 +2175,7 @@ UTF8:                         'UTF8';
 V1:                           'V1';
 V2:                           'V2';
 VALIDATE:                     'VALIDATE';
+VALIDATE_CONVERSION:          'VALIDATE_CONVERSION';
 VALIDATION:                   'VALIDATION';
 VALID_TIME_END:               'VALID_TIME_END';
 VALUES:                       'VALUES';
@@ -2368,6 +2381,7 @@ PERIOD:         '.';
 UNSIGNED_INTEGER:    [0-9]+;
 APPROXIMATE_NUM_LIT: FLOAT_FRAGMENT ('E' ('+'|'-')? (FLOAT_FRAGMENT | [0-9]+))? ('D' | 'F')?;
 
+
 // Rule #--- <CHAR_STRING> is a base for Rule #065 <char_string_lit> , it incorporates <character_representation>
 // and a superfluous subtoken typecasting of the "QUOTE"
 CHAR_STRING: '\''  (~('\'' | '\r' | '\n') | '\'' '\'' | NEWLINE)* '\'';
@@ -2435,17 +2449,17 @@ INTRODUCER: '_';
 SINGLE_LINE_COMMENT: '--' ~('\r' | '\n')* NEWLINE_EOF                 -> channel(HIDDEN);
 MULTI_LINE_COMMENT:  '/*' .*? '*/'                                    -> channel(HIDDEN);
 // https://docs.oracle.com/cd/E11882_01/server.112/e16604/ch_twelve034.htm#SQPUG054
-REMARK_COMMENT:      'REM' {self.IsNewlineAtPos(-4)}? 'ARK'? (' ' ~('\r' | '\n')*)? NEWLINE_EOF -> channel(HIDDEN);
+REMARK_COMMENT:      'REM' {this.IsNewlineAtPos(-4)}? 'ARK'? (' ' ~('\r' | '\n')*)? NEWLINE_EOF -> channel(HIDDEN);
 
 // https://docs.oracle.com/cd/E11882_01/server.112/e16604/ch_twelve032.htm#SQPUG052
-PROMPT_MESSAGE:      'PRO' {self.IsNewlineAtPos(-4)}? 'MPT'? (' ' ~('\r' | '\n')*)? NEWLINE_EOF;
+PROMPT_MESSAGE:      'PRO' {this.IsNewlineAtPos(-4)}? 'MPT'? (' ' ~('\r' | '\n')*)? NEWLINE_EOF;
 
 // TODO: should starts with newline
 START_CMD
     //: 'STA' 'RT'? SPACE ~('\r' | '\n')* NEWLINE_EOF
     // https://docs.oracle.com/cd/B19306_01/server.102/b14357/ch12002.htm
     // https://docs.oracle.com/cd/B19306_01/server.102/b14357/ch12003.htm
-    : '@' {self.IsNewlineAtPos(-2)}? '@'? ~('\r' | '\n')* NEWLINE_EOF
+    : '@''@'?
     ;
 
 REGULAR_ID: SIMPLE_LETTER (SIMPLE_LETTER | '$' | '_' | '#' | [0-9])*;
