@@ -629,7 +629,8 @@ function_spec
     ;
 
 package_obj_body
-    : exception_declaration
+    : pragma_declaration
+    | exception_declaration
     | subtype_declaration
     | cursor_declaration
     | variable_declaration
@@ -778,7 +779,7 @@ non_dml_trigger
     ;
 
 trigger_body
-    : COMPOUND TRIGGER
+    : compound_trigger_block
     | CALL identifier
     | trigger_block
     ;
@@ -788,14 +789,14 @@ routine_clause
     ;
 
 compound_trigger_block
-    : COMPOUND TRIGGER seq_of_declare_specs? timing_point_section+ END trigger_name
+    : COMPOUND TRIGGER seq_of_declare_specs? timing_point_section+ END trigger_name?
     ;
 
 timing_point_section
-    : bk=BEFORE STATEMENT IS trigger_block BEFORE STATEMENT
-    | bk=BEFORE EACH ROW IS trigger_block BEFORE EACH ROW
-    | ak=AFTER STATEMENT IS trigger_block AFTER STATEMENT
-    | ak=AFTER EACH ROW IS trigger_block AFTER EACH ROW
+    : bk=BEFORE STATEMENT IS BEGIN tps_body END BEFORE STATEMENT ';'
+    | bk=BEFORE EACH ROW IS BEGIN tps_body END BEFORE EACH ROW ';'
+    | ak=AFTER STATEMENT IS BEGIN tps_body END AFTER STATEMENT ';'
+    | ak=AFTER EACH ROW IS BEGIN tps_body END AFTER EACH ROW ';'
     ;
 
 non_dml_event
@@ -4142,7 +4143,7 @@ cache_or_nocache
     ;
 
 database_name
-    : regular_id
+    : id_expression
     ;
 
 alter_database
@@ -4493,6 +4494,7 @@ alter_database_link
 password_value
     : id_expression
     | numeric
+    | VALUES CHAR_STRING
     ;
 
 link_authentication
@@ -5179,12 +5181,10 @@ new_constraint_name
     ;
 
 drop_constraint_clause
-    : DROP  drop_primary_key_or_unique_or_generic_clause
-    ;
-
-drop_primary_key_or_unique_or_generic_clause
-    : (PRIMARY KEY | UNIQUE '(' column_name (',' column_name)* ')') CASCADE? (KEEP | DROP)?
-    | CONSTRAINT constraint_name CASCADE?
+    : DROP ( PRIMARY KEY
+           | UNIQUE '(' column_name (',' column_name)* ')'
+           | CONSTRAINT constraint_name
+           ) CASCADE? ((KEY | DROP) INDEX)? ONLINE?
     ;
 
 add_constraint
@@ -5483,6 +5483,10 @@ exception_handler
 
 trigger_block
     : (DECLARE declare_spec*)? body
+    ;
+
+tps_body
+    : seq_of_statements (EXCEPTION exception_handler+)?
     ;
 
 block
@@ -6224,7 +6228,7 @@ string_function
     | DECODE '(' expressions  ')'
     | CHR '(' concatenation USING NCHAR_CS ')'
     | NVL '(' expression ',' expression ')'
-    | TRIM '(' ((LEADING | TRAILING | BOTH)? quoted_string? FROM)? concatenation ')'
+    | TRIM '(' ((LEADING | TRAILING | BOTH)? expression? FROM)? concatenation ')'
     | TO_DATE '(' (table_element | standard_function | expression)
        (DEFAULT concatenation ON CONVERSION ERROR)? (',' quoted_string  (',' quoted_string)? )? ')'
     ;
@@ -7150,6 +7154,7 @@ regular_id
     | SELF
     | SERIALLY_REUSABLE
     | SET
+    | SEQ
     | SHARDSPACE
     | SIGNTYPE
     | SIMPLE_INTEGER

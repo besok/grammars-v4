@@ -510,7 +510,6 @@ alter_command
     | alter_role
     | alter_row_access_policy
     | alter_schema
-    | alter_security_integration
     | alter_security_integration_external_oauth
     | alter_security_integration_snowflake_oauth
     | alter_security_integration_saml2
@@ -946,10 +945,10 @@ schema_property
     | COMMENT
     ;
 
-alter_security_integration
+alter_sequence
     : ALTER SEQUENCE if_exists? object_name RENAME TO object_name
     | ALTER SEQUENCE if_exists? object_name SET? ( INCREMENT BY? EQ? num )?
-    | ALTER SEQUENCE if_exists? object_name SET comment_clause
+    | ALTER SEQUENCE if_exists? object_name SET ( order_noorder? comment_clause | order_noorder )
     | ALTER SEQUENCE if_exists? object_name UNSET COMMENT
     ;
 
@@ -1049,12 +1048,6 @@ security_integration_scim_property
     | COMMENT
     ;
 
-alter_sequence
-    : ALTER SEQUENCE if_exists? id_ RENAME TO id_
-    | ALTER SEQUENCE if_exists? id_ SET? ( INCREMENT BY? EQ? num )?
-    | ALTER SEQUENCE if_exists? id_ SET comment_clause
-    | ALTER SEQUENCE if_exists? id_ UNSET COMMENT
-    ;
 
 alter_session
     : ALTER SESSION SET session_params
@@ -1142,7 +1135,7 @@ clustering_action
 
 table_column_action
     : ADD COLUMN? column_name data_type
-        ( DEFAULT expr | ( AUTOINCREMENT | IDENTITY ) (  '(' num COMMA num ')' | START num INCREMENT num  )? )?
+        default_value?
         inline_constraint?
         ( WITH? MASKING POLICY id_ ( USING '(' column_name COMMA column_list ')' )? )?
     | RENAME COLUMN column_name TO column_name
@@ -1289,16 +1282,18 @@ alter_tag
 
 alter_task
     : ALTER TASK if_exists? object_name resume_suspend
-    | ALTER TASK if_exists? object_name REMOVE AFTER string_list | ADD AFTER string_list
+    | ALTER TASK if_exists? object_name ( REMOVE | ADD ) AFTER string_list 
     | ALTER TASK if_exists? object_name SET
-        ( WAREHOUSE EQ string )?
-        ( SCHEDULE EQ string )?
-        ( ALLOW_OVERLAPPING_EXECUTION EQ true_false )?
-        ( USER_TASK_TIMEOUT_MS EQ num )?
-        ( SUSPEND_TASK_AFTER_NUM_FAILURES EQ num )?
+        // TODO : Check and review if element's order binded or not
+        ( WAREHOUSE EQ id_ )?
+        task_schedule?
+        task_overlap?
+        task_timeout?
+        task_suspend_after_failure_number?
         comment_clause?
-        session_parameter_init_list?
+        session_params_list?
     | ALTER TASK if_exists? object_name UNSET
+        // TODO : Check and review if element's order binded or not
         WAREHOUSE?
         SCHEDULE?
         ALLOW_OVERLAPPING_EXECUTION?
@@ -1318,22 +1313,22 @@ alter_user
     ;
 
 alter_view
-    : ALTER VIEW if_exists? id_ RENAME TO id_
-    | ALTER VIEW if_exists? id_ SET comment_clause
-    | ALTER VIEW if_exists? id_ UNSET COMMENT
-    | ALTER VIEW id_ SET SECURE
-    | ALTER VIEW id_ UNSET SECURE
-    | ALTER VIEW if_exists? id_ set_tags
-    | ALTER VIEW if_exists? id_ unset_tags
-    | ALTER VIEW if_exists? id_ ADD ROW ACCESS POLICY id_ ON column_list_in_parentheses
-    | ALTER VIEW if_exists? id_ DROP ROW ACCESS POLICY id_
-    | ALTER VIEW if_exists? id_ ADD ROW ACCESS POLICY id_ ON column_list_in_parentheses COMMA DROP ROW ACCESS POLICY id_
-    | ALTER VIEW if_exists? id_ DROP ALL ROW ACCESS POLICIES
-    | ALTER VIEW id_ alter_modify COLUMN? id_ SET MASKING POLICY id_ ( USING '(' column_name COMMA column_list ')' )?
+    : ALTER VIEW if_exists? object_name RENAME TO object_name
+    | ALTER VIEW if_exists? object_name SET comment_clause
+    | ALTER VIEW if_exists? object_name UNSET COMMENT
+    | ALTER VIEW object_name SET SECURE
+    | ALTER VIEW object_name UNSET SECURE
+    | ALTER VIEW if_exists? object_name set_tags
+    | ALTER VIEW if_exists? object_name unset_tags
+    | ALTER VIEW if_exists? object_name ADD ROW ACCESS POLICY id_ ON column_list_in_parentheses
+    | ALTER VIEW if_exists? object_name DROP ROW ACCESS POLICY id_
+    | ALTER VIEW if_exists? object_name ADD ROW ACCESS POLICY id_ ON column_list_in_parentheses COMMA DROP ROW ACCESS POLICY id_
+    | ALTER VIEW if_exists? object_name DROP ALL ROW ACCESS POLICIES
+    | ALTER VIEW object_name alter_modify COLUMN? id_ SET MASKING POLICY id_ ( USING '(' column_name COMMA column_list ')' )?
                                                                                                   FORCE?
-    | ALTER VIEW id_ alter_modify COLUMN? id_ UNSET MASKING POLICY
-    | ALTER VIEW id_ alter_modify COLUMN? id_ set_tags
-    | ALTER VIEW id_ alter_modify COLUMN id_ unset_tags
+    | ALTER VIEW object_name alter_modify COLUMN? id_ UNSET MASKING POLICY
+    | ALTER VIEW object_name alter_modify COLUMN? id_ set_tags
+    | ALTER VIEW object_name alter_modify COLUMN id_ unset_tags
     ;
 
 alter_modify
@@ -2000,6 +1995,7 @@ create_sequence
         WITH?
         start_with?
         increment_by?
+        order_noorder?
         comment_clause?
     ;
 
@@ -2383,8 +2379,13 @@ collate
     : COLLATE string
     ;
 
+order_noorder
+    : ORDER
+    | NOORDER
+    ;
+
 default_value
-    : DEFAULT expr | (AUTOINCREMENT | IDENTITY) (  LR_BRACKET num COMMA num RR_BRACKET | start_with | increment_by | start_with increment_by  )?
+    : DEFAULT expr | (AUTOINCREMENT | IDENTITY) (  LR_BRACKET num COMMA num RR_BRACKET | start_with | increment_by | start_with increment_by  )? order_noorder?
     ;
 
 foreign_key
@@ -2555,35 +2556,59 @@ session_parameter_list
     : session_parameter (COMMA session_parameter)*
     ;
 
-session_parameter_init_list
-    : session_parameter_init (COMMA session_parameter_init)*
-    ;
-
-session_parameter_init
-    : session_parameter EQ true_false
+session_params_list
+    : session_params (COMMA session_params)*
     ;
 
 create_task
     : CREATE or_replace? TASK if_not_exists? object_name
-        ( (WAREHOUSE EQ string) | (USER_TASK_MANAGED_INITIAL_WAREHOUSE_SIZE EQ string ) )?
-        ( SCHEDULE EQ string )?
-        ( ALLOW_OVERLAPPING_EXECUTION EQ true_false )?
-        session_parameter_init_list?
-        ( USER_TASK_TIMEOUT_MS EQ num )?
-        ( SUSPEND_TASK_AFTER_NUM_FAILURES EQ num )?
-        ( ERROR_INTEGRATION EQ id_ )?
-        copy_grants?
+        task_parameters*
         comment_clause?
+        copy_grants?
         ( AFTER object_name (COMMA object_name)* )?
         ( WHEN search_condition )?
       AS
         sql
     ;
 
+task_parameters
+    : task_compute
+    | task_schedule
+    | task_overlap
+    | session_params_list
+    | task_timeout
+    | task_suspend_after_failure_number
+    | task_error_integration
+    ;
+
+task_compute
+    : WAREHOUSE EQ id_
+    | USER_TASK_MANAGED_INITIAL_WAREHOUSE_SIZE EQ ( wh_common_size | string ) //Snowflake allow quoted warehouse size but must be without quote. 
+    ;
+
+task_schedule
+    : SCHEDULE EQ string
+    ;
+
+task_timeout
+    : USER_TASK_TIMEOUT_MS EQ num
+    ;
+
+task_suspend_after_failure_number
+    : SUSPEND_TASK_AFTER_NUM_FAILURES EQ num
+    ;
+
+task_error_integration
+    : ERROR_INTEGRATION EQ id_ 
+    ;
+
+task_overlap
+    : ALLOW_OVERLAPPING_EXECUTION EQ true_false
+    ;
+
 sql
     : EXECUTE IMMEDIATE DBL_DOLLAR
     | sql_command
-    | call
     ;
 
 call
@@ -2615,8 +2640,23 @@ create_warehouse
               wh_params*
     ;
 
+wh_common_size
+    : XSMALL
+    | SMALL
+    | MEDIUM
+    | LARGE
+    | XLARGE
+    | XXLARGE
+    ;
+wh_extra_size
+    : XXXLARGE
+    | X4LARGE
+    | X5LARGE
+    | X6LARGE
+    ;
+
 wh_properties
-    : WAREHOUSE_SIZE EQ (XSMALL | SMALL | MEDIUM | LARGE | XLARGE | XXLARGE | XXXLARGE | X4LARGE | X5LARGE | X6LARGE | ID2)
+    : WAREHOUSE_SIZE EQ ( wh_common_size | wh_extra_size | ID2)
     | MAX_CLUSTER_COUNT EQ num
     | MIN_CLUSTER_COUNT EQ num
     | SCALING_POLICY EQ (STANDARD | ECONOMY)
@@ -3508,6 +3548,12 @@ keyword
     | TIMESTAMP
     | IF
     | COPY_OPTIONS_
+    | COMMENT
+    | ORDER
+    | NOORDER
+    | DIRECTION
+    | LENGTH
+    | LANGUAGE
     // etc
     ;
 
@@ -3545,6 +3591,7 @@ non_reserved_words
     | DOWNSTREAM
     | DYNAMIC
     | TARGET_LAG
+    | EMAIL
     ;
 
 builtin_function
@@ -3584,6 +3631,7 @@ binary_builtin_function
     | NULLIF
     | EQUAL_NULL
     | CONTAINS
+    | COLLATE
     ;
 
 binary_or_ternary_builtin_function
@@ -3645,7 +3693,8 @@ expr_list_sorted
     ;
 
 expr
-    : primitive_expression
+    : object_name DOT NEXTVAL
+    | primitive_expression
     | function_call
     | expr COLLATE string
     | case_expression
@@ -3672,7 +3721,6 @@ expr
     | ternary_builtin_function LR_BRACKET expr COMMA expr COMMA expr RR_BRACKET
     | subquery
     | try_cast_expr
-    | object_name DOT NEXTVAL
     | trim_expression
     | expr comparison_operator expr
     | expr IS null_not_null
